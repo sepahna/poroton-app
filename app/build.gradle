@@ -1069,6 +1069,9 @@ dependencies {
     // Payments
     implementation(libs.proton.payment)
     googleImplementation(libs.proton.payment.billing.google)
+    // The vanilla unit-test Hilt graph still includes Proton payment workers/ViewModels.
+    // Keep the Google billing bindings on the test classpath without adding them to the APK.
+    testImplementation(libs.proton.payment.billing.google)
     testImplementation(testFixtures(libs.proton.payment))
 
     // Proton configuration
