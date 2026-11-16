@@ -771,8 +771,22 @@ tasks.register("relocateXrayAar") {
                     if (entry.name.endsWith(".class")) {
                         def reader = new org.objectweb.asm.ClassReader(bytes)
                         def writer = new org.objectweb.asm.ClassWriter(0)
-                        def visitor = new org.objectweb.asm.commons.ClassRemapper(writer, remapper)
-                        reader.accept(visitor, 0)
+                        def classVisitor = new org.objectweb.asm.commons.ClassRemapper(writer, remapper) {
+                            @Override
+                            org.objectweb.asm.MethodVisitor visitMethod(
+                                int access, String name, String descriptor, String signature, String[] exceptions
+                            ) {
+                                def methodVisitor = super.visitMethod(access, name, descriptor, signature, exceptions)
+                                return new org.objectweb.asm.MethodVisitor(org.objectweb.asm.Opcodes.ASM9, methodVisitor) {
+                                    @Override
+                                    void visitLdcInsn(Object value) {
+                                        // gomobile's generated Seq class loads this JNI library by its basename.
+                                        super.visitLdcInsn(value == "gojni" ? "xraygojni" : value)
+                                    }
+                                }
+                            }
+                        }
+                        reader.accept(classVisitor, 0)
                         jarZip.write(writer.toByteArray())
                     } else {
                         jarZip.write(bytes)
@@ -790,15 +804,33 @@ tasks.register("relocateXrayAar") {
         java.util.zip.ZipInputStream aarInput = new java.util.zip.ZipInputStream(new FileInputStream(input))
         java.util.zip.ZipOutputStream aarOutput = new java.util.zip.ZipOutputStream(new FileOutputStream(output))
         boolean classesJarFound = false
+        Set<String> relocatedNativeAbis = []
         try {
             java.util.zip.ZipEntry entry
             while ((entry = aarInput.nextEntry) != null) {
                 byte[] bytes = aarInput.readAllBytes()
+                String outputEntryName = entry.name
                 if (entry.name == "classes.jar") {
                     bytes = relocateJar(bytes)
                     classesJarFound = true
+                } else if (entry.name ==~ /jni\/(arm64-v8a|armeabi-v7a|x86_64|x86)\/libgojni\.so/) {
+                    // Keep Proton's libgojni.so intact; give Xray a distinct filename and ELF SONAME.
+                    if (bytes.length < 4 || bytes[0] != 0x7f || bytes[1] != 0x45 || bytes[2] != 0x4c || bytes[3] != 0x46) {
+                        throw new GradleException("Xray JNI payload is not a valid ELF file: ${entry.name}")
+                    }
+                    File nativeFile = new File(temporaryDir, "libxraygojni.so")
+                    nativeFile.bytes = bytes
+                    def patch = new ProcessBuilder("patchelf", "--set-soname", "libxraygojni.so", nativeFile.absolutePath)
+                        .redirectErrorStream(true).start()
+                    String patchOutput = patch.inputStream.getText("UTF-8")
+                    if (patch.waitFor() != 0) {
+                        throw new GradleException("Failed to rename Xray JNI SONAME for ${entry.name}: ${patchOutput}")
+                    }
+                    bytes = nativeFile.bytes
+                    outputEntryName = entry.name.replace("libgojni.so", "libxraygojni.so")
+                    relocatedNativeAbis.add(entry.name.split("/")[1])
                 }
-                aarOutput.putNextEntry(new java.util.zip.ZipEntry(entry.name))
+                aarOutput.putNextEntry(new java.util.zip.ZipEntry(outputEntryName))
                 aarOutput.write(bytes)
                 aarOutput.closeEntry()
                 aarInput.closeEntry()
@@ -811,7 +843,11 @@ tasks.register("relocateXrayAar") {
             output.delete()
             throw new GradleException("Xray AAR does not contain classes.jar")
         }
-        logger.lifecycle("Relocated gomobile package go.* -> xraygo.* in ${output}")
+        if (relocatedNativeAbis.size() != 4) {
+            output.delete()
+            throw new GradleException("Expected Xray JNI libraries for all four ABIs, found: ${relocatedNativeAbis}")
+        }
+        logger.lifecycle("Relocated Xray gomobile classes go.* -> xraygo.*, JNI library libgojni.so -> libxraygojni.so, and ELF SONAME.")
     }
 }
 tasks.named("preBuild").configure {
