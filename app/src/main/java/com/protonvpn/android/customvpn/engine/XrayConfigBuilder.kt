@@ -112,8 +112,13 @@ object XrayConfigBuilder {
         val uri = shareUri(profile.rawUri)
         val authority = uri.rawAuthority.orEmpty()
         val userInfo = authority.substringBeforeLast('@', "")
-        val decodedUser = decodeBase64IfPossible(userInfo).ifBlank { decode(userInfo) }
-        val credentials = decodedUser.split(":", limit = 2)
+        val decodedWholeAuthority = decodeBase64IfPossible(authority)
+        val credentialsText = when {
+            userInfo.isNotBlank() -> decodeBase64IfPossible(userInfo).ifBlank { decode(userInfo) }
+            decodedWholeAuthority.contains('@') -> decodedWholeAuthority.substringBeforeLast('@')
+            else -> decodedWholeAuthority
+        }
+        val credentials = credentialsText.split(":", limit = 2)
         require(credentials.size == 2 && credentials[0].isNotBlank()) { "Shadowsocks method/password is invalid" }
         val settings = JSONObject().put("servers", JSONArray().put(
             JSONObject().put("address", profile.server).put("port", profile.port)
