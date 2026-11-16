@@ -235,6 +235,11 @@ private fun CustomProfilesScreen(
     decodeQrImage: suspend (Uri) -> String,
     onClose: () -> Unit,
 ) {
+    var input by remember { mutableStateOf(initialText) }
+    var profiles by remember { mutableStateOf(loadProfiles()) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+
     val scope = rememberCoroutineScope()
     val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -250,11 +255,6 @@ private fun CustomProfilesScreen(
             }
         }
     }
-    var input by remember { mutableStateOf(initialText) }
-    var profiles by remember { mutableStateOf(loadProfiles()) }
-    var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-
     BackHandler(onBack = onClose)
 
     Column(
