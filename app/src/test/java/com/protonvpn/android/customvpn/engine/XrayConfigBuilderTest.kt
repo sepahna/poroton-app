@@ -8,6 +8,7 @@ import android.util.Base64
 import com.protonvpn.android.customvpn.model.CustomVpnProfile
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.nio.charset.StandardCharsets
@@ -87,6 +88,35 @@ class XrayConfigBuilderTest {
         assertThrows(IllegalArgumentException::class.java) {
             XrayConfigBuilder.build(profile)
         }
+    }
+
+
+    @Test
+    fun trojanDefaultsToTlsWhenShareLinkOmitsSecurityParameter() {
+        val profile = profile(
+            protocol = "trojan",
+            rawUri = "trojan://secret-password@example.com:443?sni=example.com"
+        )
+        val outbound = JSONObject(XrayConfigBuilder.build(profile))
+            .getJSONArray("outbounds").getJSONObject(0)
+        assertEquals("trojan", outbound.getString("protocol"))
+        assertEquals("tls", outbound.getJSONObject("streamSettings").getString("security"))
+        assertEquals("example.com", outbound.getJSONObject("streamSettings")
+            .getJSONObject("tlsSettings").getString("serverName"))
+    }
+
+    @Test
+    fun shadowsocksOutboundDoesNotIncludeTransportStreamSettings() {
+        val profile = profile(
+            protocol = "ss",
+            rawUri = "ss://YWVzLTI1Ni1nY206cGFzcw==@example.com:8388#test"
+        )
+        val outbound = JSONObject(XrayConfigBuilder.build(profile))
+            .getJSONArray("outbounds").getJSONObject(0)
+        assertEquals("shadowsocks", outbound.getString("protocol"))
+        assertEquals("aes-256-gcm", outbound.getJSONObject("settings")
+            .getJSONArray("servers").getJSONObject(0).getString("method"))
+        assertFalse(outbound.has("streamSettings"))
     }
 
     private fun profile(protocol: String, rawUri: String) = CustomVpnProfile(
