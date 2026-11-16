@@ -73,7 +73,7 @@ object ProxyProfileImporter {
     }
 
     private fun parseVmess(link: String, source: String?): CustomVpnProfile {
-        val encoded = link.removePrefix("vmess://")
+        val encoded = link.substringAfter("://")
         val jsonText = String(Base64.decode(padBase64(encoded), Base64.DEFAULT), StandardCharsets.UTF_8)
         val json = JSONObject(jsonText)
         val host = json.optString("add")
