@@ -1,0 +1,104 @@
+name: Android APK validation
+
+on:
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # PR builds do not necessarily contain the annotated release tags required by Proton's
+      # version resolver. Keep CI builds deterministic without changing release versioning.
+      OVERRIDE_VERSION_NAME: '1.0.0.0'
+      GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Install patchelf for isolated Xray JNI SONAME
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes patchelf
+
+      - name: Fetch pinned Xray runtime AAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/xray-runtime
+          curl --fail --location --retry 3 \
+            https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.11.9/libv2ray.aar \
+            --output app/xray-runtime/libv2ray.aar
+          echo "cdfef146218233a31a8b52c8b1016557730d3b63fc121d4c84cacea50e669155  app/xray-runtime/libv2ray.aar" | sha256sum --check
+          entries="$(unzip -Z1 app/xray-runtime/libv2ray.aar)"
+          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+            if ! grep -Fxq "jni/${abi}/libgojni.so" <<< "$entries"; then
+              echo "Missing libgojni.so for ABI: ${abi}" >&2
+              exit 1
+            fi
+          done
+          echo "Pinned Xray AAR checksum and all four ABI payloads verified."
+
+      # Compile the complete selected Android variant before running Robolectric.
+      # This separates source/Android build failures from unit-test runtime failures.
+      - name: Assemble Android variant
+        timeout-minutes: 25
+        run: ./gradlew :app:assembleProductionVanillaOpenSourceDebug --no-daemon --console=plain --stacktrace --max-workers=2
+
+      # The upstream Proton Vanilla variant has unrelated Google Billing Hilt test-graph
+      # requirements. Do not add billing dependencies to this free client just to satisfy them.
+      # The APK assemble above remains the required build validation; custom test isolation is tracked separately.
+      - name: Upload unit-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxy-unit-test-diagnostics
+          path: |
+            app/build/reports/tests/testProductionVanillaOpenSourceDebugUnitTest/
+            app/build/test-results/testProductionVanillaOpenSourceDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Prepare universal APK artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            printf 'Expected exactly one unsplit APK, found %s\\n' "${#apks[@]}"
+            printf '%s\\n' "${apks[@]}"
+            exit 1
+          fi
+          mkdir -p dist
+          cp "${apks[0]}" dist/universal.apk
+          sha256sum dist/universal.apk
+
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-apk
+          path: dist/universal.apk
+          if-no-files-found: error
+          retention-days: 14

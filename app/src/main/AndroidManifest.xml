@@ -55,6 +55,17 @@
         tools:replace="android:theme">
 
         <activity
+            android:name=".customvpn.ui.CustomProfilesActivity"
+            android:exported="true"
+            android:theme="@style/ProtonTheme.Vpn.Mobile">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <activity
             android:name=".redesign.app.ui.MainActivity"
             android:theme="@style/ProtonTheme.Splash.Vpn.DarkPreferred"
             android:exported="false"
@@ -189,7 +200,7 @@
 
         <!-- nosemgrep: java.android.security.exported_activity.exported_activity -->
         <activity-alias android:name="ch.protonvpn.android.RoutingActivity"
-            android:targetActivity=".redesign.app.ui.MainActivity"
+            android:targetActivity=".customvpn.ui.CustomProfilesActivity"
             android:label="@string/app_name"
             android:icon="@mipmap/ic_launcher"
             android:exported="true">
@@ -325,6 +336,16 @@
 
         </activity-alias>
 
+        <service
+            android:name=".customvpn.engine.CustomXrayVpnService"
+            android:exported="false"
+            android:foregroundServiceType="systemExempted"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            tools:ignore="ForegroundServicePermission">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
         <service
             android:name=".vpn.wireguard.WireguardWrapperService"
             android:exported="false"

@@ -20,6 +20,7 @@
 package com.protonvpn.android.redesign.home_screen.ui
 
 import android.content.Context
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.ReportDrawnWhen
@@ -79,6 +80,7 @@ import com.protonvpn.android.promooffers.ui.ProminentBannerState
 import com.protonvpn.android.promooffers.ui.PromoOfferBanner
 import com.protonvpn.android.promooffers.ui.PromoOfferBannerState
 import com.protonvpn.android.promooffers.ui.PromoOfferProminentBanner
+import com.protonvpn.android.customvpn.ui.CustomProfilesActivity
 import com.protonvpn.android.redesign.app.ui.MainActivityViewModel
 import com.protonvpn.android.redesign.app.ui.SettingsChangeViewModel
 import com.protonvpn.android.redesign.app.ui.nav.MainNavEvent
@@ -247,6 +249,9 @@ fun HomeRoute(
         onOpenSmartDiscoveryConnectionPreferences = homeViewModel::openSmartDiscoveryConnectionPreferences,
         onDismissSmartDiscoveryConnectionPreferencesDialog = homeViewModel::dismissSmartDiscoveryConnectionPreferencesDialog,
         onLaunchUpgradeDialog = { s, t -> upgradeDialogLauncher.launch(context, s, t) },
+        onOpenCustomProfiles = {
+            context.startActivity(Intent(context, CustomProfilesActivity::class.java))
+        },
     )
 
     homeViewModel.eventFlow.collectAsEffect { event ->
@@ -313,6 +318,7 @@ fun HomeView(
     onOpenSmartDiscoveryConnectionPreferences: () -> Unit,
     onDismissSmartDiscoveryConnectionPreferencesDialog: () -> Unit,
     onLaunchUpgradeDialog: (upgradeSource: UpgradeSource, upgradeTrigger: UpgradeTrigger) -> Unit,
+    onOpenCustomProfiles: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -398,7 +404,7 @@ fun HomeView(
     ConstraintLayout(
         modifier = Modifier.fillMaxSize()
     ) {
-        val (vpnStatusTop, vpnStatusBottom, map) = createRefs()
+        val (vpnStatusTop, vpnStatusBottom, map, customProfilesButton) = createRefs()
         if (mapState != null) {
             Box(modifier = Modifier
                 .constrainAs(map) {
@@ -524,6 +530,16 @@ fun HomeView(
         val coverAlpha = remember(fullCoverThresholdPx) {
             derivedStateOf { calculateOverlayAlpha(recentsComponent.recentsExpandState.listOffsetPx, fullCoverThresholdPx) }
         }
+        androidx.compose.material3.TextButton(
+            onClick = onOpenCustomProfiles,
+            modifier = Modifier.constrainAs(customProfilesButton) {
+                top.linkTo(parent.top, margin = 54.dp)
+                end.linkTo(parent.end, margin = 12.dp)
+            },
+        ) {
+            Text("کانفیگ‌ها")
+        }
+
         VpnStatusTop(
             vpnState,
             transitionValue = { vpnStateTransitionProgress.value },

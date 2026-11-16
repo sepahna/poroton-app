@@ -31,6 +31,12 @@ buildscript {
         maven { url "https://plugins.gradle.org/m2/" }
         mavenCentral()
     }
+    dependencies {
+        // Relocate gomobile's generic go.Seq classes in Xray's AAR. Proton's own Go VPN
+        // runtime already ships the same package, and Android DEX cannot contain both.
+        classpath "org.ow2.asm:asm:9.7.1"
+        classpath "org.ow2.asm:asm-commons:9.7.1"
+    }
 }
 
 plugins {
@@ -403,11 +409,12 @@ android {
         disable 'ExtraTranslation', 'ImpliedQuantity', 'MissingDefaultResource', 'MissingTranslation'
         ignoreWarnings = true
     }
-    room {
-        schemaDirectory "$projectDir/schemas"
-        // Using Java generation, kotlin generator generates incorrect code: https://issuetracker.google.com/issues/446633192
-        generateKotlin false
-    }
+}
+
+room {
+    schemaDirectory "$projectDir/schemas"
+    // Using Java generation, kotlin generator generates incorrect code: https://issuetracker.google.com/issues/446633192
+    generateKotlin false
 }
 
 androidComponents {
@@ -723,6 +730,130 @@ tasks.register("getExportArchiveNameProperties") {
     }
 }
 
+
+// AndroidLibXrayLite and Proton's go-vpn-lib are both gomobile AARs and both
+// embed go.Seq/go.Universe. Relocate only the Xray copy to xraygo.* at bytecode
+// level; native .so files and libv2ray.* API classes remain untouched.
+tasks.register("relocateXrayAar") {
+    def sourceAar = layout.projectDirectory.file("xray-runtime/libv2ray.aar")
+    def outputAar = layout.buildDirectory.file("intermediates/xray-relocated/libv2ray-relocated.aar")
+    inputs.file(sourceAar)
+    outputs.file(outputAar)
+    doLast {
+        File input = sourceAar.asFile
+        if (!input.isFile()) {
+            throw new GradleException("Missing pinned Xray AAR: ${input}")
+        }
+        File output = outputAar.get().asFile
+        output.parentFile.mkdirs()
+
+        def remapper = new org.objectweb.asm.commons.Remapper() {
+            @Override
+            String map(String internalName) {
+                return internalName != null && internalName.startsWith("go/")
+                    ? "xraygo/" + internalName.substring(3)
+                    : internalName
+            }
+        }
+
+        def relocateJar = { byte[] jarBytes ->
+            ByteArrayOutputStream jarOutput = new ByteArrayOutputStream()
+            java.util.zip.ZipInputStream jarInput = new java.util.zip.ZipInputStream(new ByteArrayInputStream(jarBytes))
+            java.util.zip.ZipOutputStream jarZip = new java.util.zip.ZipOutputStream(jarOutput)
+            try {
+                java.util.zip.ZipEntry entry
+                while ((entry = jarInput.nextEntry) != null) {
+                    byte[] bytes = jarInput.readAllBytes()
+                    String relocatedEntryName = entry.name.startsWith("go/") && entry.name.endsWith(".class")
+                        ? "xraygo/" + entry.name.substring(3)
+                        : entry.name
+                    jarZip.putNextEntry(new java.util.zip.ZipEntry(relocatedEntryName))
+                    if (entry.name.endsWith(".class")) {
+                        def reader = new org.objectweb.asm.ClassReader(bytes)
+                        def writer = new org.objectweb.asm.ClassWriter(0)
+                        def classVisitor = new org.objectweb.asm.commons.ClassRemapper(writer, remapper) {
+                            @Override
+                            org.objectweb.asm.MethodVisitor visitMethod(
+                                int access, String name, String descriptor, String signature, String[] exceptions
+                            ) {
+                                def methodVisitor = super.visitMethod(access, name, descriptor, signature, exceptions)
+                                return new org.objectweb.asm.MethodVisitor(org.objectweb.asm.Opcodes.ASM9, methodVisitor) {
+                                    @Override
+                                    void visitLdcInsn(Object value) {
+                                        // gomobile's generated Seq class loads this JNI library by its basename.
+                                        super.visitLdcInsn(value == "gojni" ? "xraygojni" : value)
+                                    }
+                                }
+                            }
+                        }
+                        reader.accept(classVisitor, 0)
+                        jarZip.write(writer.toByteArray())
+                    } else {
+                        jarZip.write(bytes)
+                    }
+                    jarZip.closeEntry()
+                    jarInput.closeEntry()
+                }
+            } finally {
+                jarZip.close()
+                jarInput.close()
+            }
+            return jarOutput.toByteArray()
+        }
+
+        java.util.zip.ZipInputStream aarInput = new java.util.zip.ZipInputStream(new FileInputStream(input))
+        java.util.zip.ZipOutputStream aarOutput = new java.util.zip.ZipOutputStream(new FileOutputStream(output))
+        boolean classesJarFound = false
+        Set<String> relocatedNativeAbis = []
+        try {
+            java.util.zip.ZipEntry entry
+            while ((entry = aarInput.nextEntry) != null) {
+                byte[] bytes = aarInput.readAllBytes()
+                String outputEntryName = entry.name
+                if (entry.name == "classes.jar") {
+                    bytes = relocateJar(bytes)
+                    classesJarFound = true
+                } else if (entry.name ==~ /jni\/(arm64-v8a|armeabi-v7a|x86_64|x86)\/libgojni\.so/) {
+                    // Keep Proton's libgojni.so intact; give Xray a distinct filename and ELF SONAME.
+                    if (bytes.length < 4 || (bytes[0] & 0xff) != 0x7f || (bytes[1] & 0xff) != 0x45 || (bytes[2] & 0xff) != 0x4c || (bytes[3] & 0xff) != 0x46) {
+                        throw new GradleException("Xray JNI payload is not a valid ELF file: ${entry.name}")
+                    }
+                    File nativeFile = new File(temporaryDir, "libxraygojni.so")
+                    nativeFile.bytes = bytes
+                    def patch = new ProcessBuilder("patchelf", "--set-soname", "libxraygojni.so", nativeFile.absolutePath)
+                        .redirectErrorStream(true).start()
+                    String patchOutput = patch.inputStream.getText("UTF-8")
+                    if (patch.waitFor() != 0) {
+                        throw new GradleException("Failed to rename Xray JNI SONAME for ${entry.name}: ${patchOutput}")
+                    }
+                    bytes = nativeFile.bytes
+                    outputEntryName = entry.name.replace("libgojni.so", "libxraygojni.so")
+                    relocatedNativeAbis.add(entry.name.split("/")[1])
+                }
+                aarOutput.putNextEntry(new java.util.zip.ZipEntry(outputEntryName))
+                aarOutput.write(bytes)
+                aarOutput.closeEntry()
+                aarInput.closeEntry()
+            }
+        } finally {
+            aarOutput.close()
+            aarInput.close()
+        }
+        if (!classesJarFound) {
+            output.delete()
+            throw new GradleException("Xray AAR does not contain classes.jar")
+        }
+        if (relocatedNativeAbis.size() != 4) {
+            output.delete()
+            throw new GradleException("Expected Xray JNI libraries for all four ABIs, found: ${relocatedNativeAbis}")
+        }
+        logger.lifecycle("Relocated Xray gomobile classes go.* -> xraygo.*, JNI library libgojni.so -> libxraygojni.so, and ELF SONAME.")
+    }
+}
+tasks.named("preBuild").configure {
+    dependsOn("relocateXrayAar")
+}
+
 repositories {
     maven { url "https://clojars.org/repo/" }
     google()
@@ -738,7 +869,9 @@ configurations.configureEach {
 }
 
 dependencies {
+    implementation("com.google.zxing:core:3.5.3")
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+    implementation(files(layout.buildDirectory.file("intermediates/xray-relocated/libv2ray-relocated.aar")))
     googleImplementation(libs.android.installreferrer)
     implementation(libs.androidx.profileinstaller)
     baselineProfile(projects.baselineprofile)
