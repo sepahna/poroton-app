@@ -96,8 +96,11 @@ class CustomXrayVpnService : VpnService() {
                     .setSession(profile.name)
                     .setMtu(DEFAULT_MTU)
                     .addAddress(TUN_ADDRESS, 32)
+                    .addAddress(TUN_IPV6_ADDRESS, 126)
                     .addRoute("0.0.0.0", 0)
+                    .addRoute("::", 0)
                     .addDnsServer(DNS_SERVER)
+                    .addDnsServer(DNS_IPV6_SERVER)
                     .addDisallowedApplication(packageName)
                     .establish() ?: error("ساخت رابط VPN ناموفق بود")
 
@@ -180,6 +183,8 @@ class CustomXrayVpnService : VpnService() {
         private const val DEFAULT_MTU = 1500
         private const val TUN_ADDRESS = "10.111.0.1"
         private const val DNS_SERVER = "1.1.1.1"
+        private const val TUN_IPV6_ADDRESS = "fd00:1111:1111::1"
+        private const val DNS_IPV6_SERVER = "2606:4700:4700::1111"
 
         /** Returns the system VPN consent Intent, or null when permission is already granted. */
         fun permissionIntent(context: android.content.Context): Intent? = VpnService.prepare(context)
@@ -194,7 +199,7 @@ class CustomXrayVpnService : VpnService() {
         }
 
         fun stop(context: android.content.Context) {
-            ContextCompat.startForegroundService(context,
+            context.startService(
                 Intent(context, CustomXrayVpnService::class.java).setAction(ACTION_DISCONNECT)
             )
         }
