@@ -33,7 +33,7 @@ object XrayConfigBuilder {
         val tun = JSONObject()
             .put("tag", "tun-in")
             .put("protocol", "tun")
-            .put("settings", JSONObject().put("name", "tun0").put("MTU", mtu).put("stack", "system"))
+            .put("settings", JSONObject().put("name", "xray0").put("MTU", mtu).put("userLevel", 8))
             .put("sniffing", JSONObject()
                 .put("enabled", true)
                 .put("destOverride", JSONArray().put("http").put("tls").put("quic")))
@@ -119,7 +119,7 @@ object XrayConfigBuilder {
             JSONObject().put("address", profile.server).put("port", profile.port)
                 .put("method", credentials[0]).put("password", credentials[1])
         ))
-        return outbound("shadowsocks", settings, JSONObject().put("network", "tcp,udp"))
+        return outbound("shadowsocks", settings)
     }
 
     private fun buildSocks(profile: CustomVpnProfile): JSONObject {
@@ -132,7 +132,7 @@ object XrayConfigBuilder {
             }
         }
         val settings = JSONObject().put("servers", JSONArray().put(server))
-        return outbound("socks", settings, JSONObject().put("network", "tcp"))
+        return outbound("socks", settings)
     }
 
     private fun buildHttp(profile: CustomVpnProfile): JSONObject {
@@ -144,7 +144,7 @@ object XrayConfigBuilder {
                 server.put("users", JSONArray().put(JSONObject().put("user", parts[0]).put("pass", parts[1])))
             }
         }
-        return outbound("http", JSONObject().put("servers", JSONArray().put(server)), JSONObject().put("network", "tcp"))
+        return outbound("http", JSONObject().put("servers", JSONArray().put(server)))
     }
 
     private fun streamSettings(query: Map<String, String>): JSONObject {
@@ -229,9 +229,11 @@ object XrayConfigBuilder {
         return stream
     }
 
-    private fun outbound(protocol: String, settings: JSONObject, stream: JSONObject) =
-        JSONObject().put("tag", "proxy").put("protocol", protocol)
-            .put("settings", settings).put("streamSettings", stream)
+    private fun outbound(protocol: String, settings: JSONObject, stream: JSONObject? = null): JSONObject {
+        val result = JSONObject().put("tag", "proxy").put("protocol", protocol).put("settings", settings)
+        if (stream != null) result.put("streamSettings", stream)
+        return result
+    }
 
     private fun shareUri(value: String) = java.net.URI(value)
 
