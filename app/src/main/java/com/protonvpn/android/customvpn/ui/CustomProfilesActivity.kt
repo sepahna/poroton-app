@@ -5,7 +5,6 @@
 package com.protonvpn.android.customvpn.ui
 
 import android.app.Activity
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -36,7 +35,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -118,7 +116,7 @@ class CustomProfilesActivity : ComponentActivity() {
                     )
                 }
             }
-            result.onSuccess(profileStore::addAll)
+            result.onSuccess { profileStore.addAll(it) }
             onResult(result.map { profileStore.getAll() })
         }
     }
@@ -186,7 +184,6 @@ private fun CustomProfilesScreen(
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var input by remember { mutableStateOf(initialText) }
     var profiles by remember { mutableStateOf(loadProfiles()) }
     var busy by remember { mutableStateOf(false) }
