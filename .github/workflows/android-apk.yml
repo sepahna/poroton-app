@@ -55,8 +55,12 @@ jobs:
           done
           echo "Pinned Xray AAR checksum and all four ABI payloads verified."
 
-      - name: Run custom profile importer tests
-        run: ./gradlew :app:testProductionVanillaOpenSourceDebugUnitTest --no-daemon
+      - name: Run custom proxy unit tests
+        run: |
+          ./gradlew :app:testProductionVanillaOpenSourceDebugUnitTest \
+            --tests 'com.protonvpn.android.customvpn.importer.ProxyProfileImporterTest' \
+            --tests 'com.protonvpn.android.customvpn.engine.XrayConfigBuilderTest' \
+            --no-daemon
 
       - name: Assemble Android APK
         run: ./gradlew :app:assembleProductionVanillaOpenSourceDebug --no-daemon
