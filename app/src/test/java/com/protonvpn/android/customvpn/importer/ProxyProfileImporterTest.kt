@@ -32,6 +32,15 @@ class ProxyProfileImporterTest {
     }
 
     @Test
+    fun parsesUppercaseVmessScheme() {
+        val payload = """{"add":"vmess.example","port":"8443","ps":"VMess NL"}"""
+        val encoded = Base64.getEncoder().encodeToString(payload.toByteArray())
+        val profile = ProxyProfileImporter.parseShareLink("VMESS://$encoded")
+        assertEquals("vmess", profile.protocol)
+        assertEquals("vmess.example", profile.server)
+    }
+
+    @Test
     fun importsBase64SubscriptionAndDeduplicates() {
         val link = "trojan://secret@example.com:443#one"
         val subscription = Base64.getEncoder().encodeToString("$link\n$link".toByteArray())
