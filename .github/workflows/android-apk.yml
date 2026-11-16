@@ -1,9 +1,6 @@
 name: Android APK validation
 
 on:
-  push:
-    branches:
-      - feature/xray-profile-import
   pull_request:
     branches:
       - master
@@ -13,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-apk-${{ github.ref }}
+  group: android-apk-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
