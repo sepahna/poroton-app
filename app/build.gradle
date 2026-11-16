@@ -31,6 +31,12 @@ buildscript {
         maven { url "https://plugins.gradle.org/m2/" }
         mavenCentral()
     }
+    dependencies {
+        // Relocate gomobile's generic go.Seq classes in Xray's AAR. Proton's own Go VPN
+        // runtime already ships the same package, and Android DEX cannot contain both.
+        classpath "org.ow2.asm:asm:9.7.1"
+        classpath "org.ow2.asm:asm-commons:9.7.1"
+    }
 }
 
 plugins {
@@ -724,6 +730,91 @@ tasks.register("getExportArchiveNameProperties") {
     }
 }
 
+
+// AndroidLibXrayLite and Proton's go-vpn-lib are both gomobile AARs and both
+// embed go.Seq/go.Universe. Relocate only the Xray copy to xraygo.* at bytecode
+// level; native .so files and libv2ray.* API classes remain untouched.
+tasks.register("relocateXrayAar") {
+    def sourceAar = layout.projectDirectory.file("xray-runtime/libv2ray.aar")
+    def outputAar = layout.buildDirectory.file("intermediates/xray-relocated/libv2ray-relocated.aar")
+    inputs.file(sourceAar)
+    outputs.file(outputAar)
+    doLast {
+        File input = sourceAar.asFile
+        if (!input.isFile()) {
+            throw new GradleException("Missing pinned Xray AAR: ${input}")
+        }
+        File output = outputAar.get().asFile
+        output.parentFile.mkdirs()
+
+        def remapper = new org.objectweb.asm.commons.Remapper() {
+            @Override
+            String map(String internalName) {
+                return internalName != null && internalName.startsWith("go/")
+                    ? "xraygo/" + internalName.substring(3)
+                    : internalName
+            }
+        }
+
+        def relocateJar = { byte[] jarBytes ->
+            ByteArrayOutputStream jarOutput = new ByteArrayOutputStream()
+            java.util.zip.ZipInputStream jarInput = new java.util.zip.ZipInputStream(new ByteArrayInputStream(jarBytes))
+            java.util.zip.ZipOutputStream jarZip = new java.util.zip.ZipOutputStream(jarOutput)
+            try {
+                java.util.zip.ZipEntry entry
+                while ((entry = jarInput.nextEntry) != null) {
+                    byte[] bytes = jarInput.readAllBytes()
+                    jarZip.putNextEntry(new java.util.zip.ZipEntry(entry.name))
+                    if (entry.name.endsWith(".class")) {
+                        def reader = new org.objectweb.asm.ClassReader(bytes)
+                        def writer = new org.objectweb.asm.ClassWriter(0)
+                        def visitor = new org.objectweb.asm.commons.ClassRemapper(writer, remapper)
+                        reader.accept(visitor, 0)
+                        jarZip.write(writer.toByteArray())
+                    } else {
+                        jarZip.write(bytes)
+                    }
+                    jarZip.closeEntry()
+                    jarInput.closeEntry()
+                }
+            } finally {
+                jarZip.close()
+                jarInput.close()
+            }
+            return jarOutput.toByteArray()
+        }
+
+        java.util.zip.ZipInputStream aarInput = new java.util.zip.ZipInputStream(new FileInputStream(input))
+        java.util.zip.ZipOutputStream aarOutput = new java.util.zip.ZipOutputStream(new FileOutputStream(output))
+        boolean classesJarFound = false
+        try {
+            java.util.zip.ZipEntry entry
+            while ((entry = aarInput.nextEntry) != null) {
+                byte[] bytes = aarInput.readAllBytes()
+                if (entry.name == "classes.jar") {
+                    bytes = relocateJar(bytes)
+                    classesJarFound = true
+                }
+                aarOutput.putNextEntry(new java.util.zip.ZipEntry(entry.name))
+                aarOutput.write(bytes)
+                aarOutput.closeEntry()
+                aarInput.closeEntry()
+            }
+        } finally {
+            aarOutput.close()
+            aarInput.close()
+        }
+        if (!classesJarFound) {
+            output.delete()
+            throw new GradleException("Xray AAR does not contain classes.jar")
+        }
+        logger.lifecycle("Relocated gomobile package go.* -> xraygo.* in ${output}")
+    }
+}
+tasks.named("preBuild").configure {
+    dependsOn("relocateXrayAar")
+}
+
 repositories {
     maven { url "https://clojars.org/repo/" }
     google()
@@ -741,6 +832,7 @@ configurations.configureEach {
 dependencies {
     implementation("com.google.zxing:core:3.5.3")
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+    implementation(files(layout.buildDirectory.file("intermediates/xray-relocated/libv2ray-relocated.aar")))
     googleImplementation(libs.android.installreferrer)
     implementation(libs.androidx.profileinstaller)
     baselineProfile(projects.baselineprofile)
