@@ -8,6 +8,7 @@ import android.app.Activity
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -37,7 +38,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
@@ -169,7 +169,16 @@ class CustomProfilesActivity : ComponentActivity() {
         }
     }
 
-    private fun connectProfile(profileId: String) {
+    private fun connectProfile(profileId: String): Boolean {
+        // Android permits only one active VPN at a time. Avoid silently replacing the
+        // Proton tunnel while its connection UI still believes it is connected.
+        val connectivityManager = getSystemService(ConnectivityManager::class.java)
+        val activeVpn = connectivityManager.activeNetwork?.let { network ->
+            connectivityManager.getNetworkCapabilities(network)
+                ?.hasTransport(ConnectivityManager.TRANSPORT_VPN) == true
+        } == true
+        if (activeVpn) return false
+
         val permissionIntent = VpnService.prepare(this)
         if (permissionIntent == null) {
             CustomXrayVpnService.start(this, profileId)
@@ -177,6 +186,7 @@ class CustomProfilesActivity : ComponentActivity() {
             pendingConnectProfileId = profileId
             vpnPermissionLauncher.launch(permissionIntent)
         }
+        return true
     }
 
     private fun readClipboard(): String {
@@ -196,13 +206,12 @@ private fun CustomProfilesScreen(
     loadProfiles: () -> List<CustomVpnProfile>,
     importProfiles: (String, (Result<List<CustomVpnProfile>>) -> Unit) -> Unit,
     refreshSubscriptions: ((Result<List<CustomVpnProfile>>) -> Unit) -> Unit,
-    connect: (String) -> Unit,
+    connect: (String) -> Boolean,
     disconnect: () -> Unit,
     delete: (String) -> List<CustomVpnProfile>,
     pasteClipboard: () -> String,
     onClose: () -> Unit,
 ) {
-    val context = LocalContext.current
     var input by remember { mutableStateOf(initialText) }
     var profiles by remember { mutableStateOf(loadProfiles()) }
     var busy by remember { mutableStateOf(false) }
@@ -294,8 +303,11 @@ private fun CustomProfilesScreen(
                 ProfileCard(
                     profile = profile,
                     onConnect = {
-                        connect(profile.id)
-                        message = "درخواست اتصال ارسال شد؛ وضعیت را از اعلان VPN بررسی کنید."
+                        message = if (connect(profile.id)) {
+                            "درخواست اتصال ارسال شد؛ وضعیت را از اعلان VPN بررسی کنید."
+                        } else {
+                            "ابتدا اتصال VPN فعلی را از صفحه اصلی قطع کنید."
+                        }
                     },
                     onDelete = { profiles = delete(profile.id) },
                 )
