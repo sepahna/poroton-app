@@ -21,6 +21,7 @@ jobs:
       # PR builds do not necessarily contain the annotated release tags required by Proton's
       # version resolver. Keep CI builds deterministic without changing release versioning.
       OVERRIDE_VERSION_NAME: '1.0.0.0'
+      GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,15 +56,33 @@ jobs:
           done
           echo "Pinned Xray AAR checksum and all four ABI payloads verified."
 
-      - name: Run custom proxy unit tests
-        run: |
-          ./gradlew :app:testProductionVanillaOpenSourceDebugUnitTest \
-            --tests 'com.protonvpn.android.customvpn.importer.ProxyProfileImporterTest' \
-            --tests 'com.protonvpn.android.customvpn.engine.XrayConfigBuilderTest' \
-            --no-daemon
+      # Compile the complete selected Android variant before running Robolectric.
+      # This separates source/Android build failures from unit-test runtime failures.
+      - name: Assemble Android variant
+        timeout-minutes: 25
+        run: ./gradlew :app:assembleProductionVanillaOpenSourceDebug --no-daemon --console=plain --stacktrace --max-workers=2
 
-      - name: Assemble Android APK
-        run: ./gradlew :app:assembleProductionVanillaOpenSourceDebug --no-daemon
+      - name: Run custom proxy unit tests
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=30s 19m \
+            ./gradlew :app:testProductionVanillaOpenSourceDebugUnitTest \
+              --tests 'com.protonvpn.android.customvpn.importer.ProxyProfileImporterTest' \
+              --tests 'com.protonvpn.android.customvpn.engine.XrayConfigBuilderTest' \
+              --no-daemon --console=plain --stacktrace --info --max-workers=2
+
+      - name: Upload unit-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxy-unit-test-diagnostics
+          path: |
+            app/build/reports/tests/testProductionVanillaOpenSourceDebugUnitTest/
+            app/build/test-results/testProductionVanillaOpenSourceDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Prepare universal APK artifact
         shell: bash
@@ -71,8 +90,8 @@ jobs:
           set -euo pipefail
           mapfile -t apks < <(find app/build/outputs/apk -type f -name '*.apk' | sort)
           if [ "${#apks[@]}" -ne 1 ]; then
-            printf 'Expected exactly one unsplit APK, found %s\n' "${#apks[@]}"
-            printf '%s\n' "${apks[@]}"
+            printf 'Expected exactly one unsplit APK, found %s\\n' "${#apks[@]}"
+            printf '%s\\n' "${apks[@]}"
             exit 1
           fi
           mkdir -p dist
