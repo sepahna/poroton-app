@@ -16,6 +16,20 @@ connect. The current app still routes connection requests through Proton's
 `VpnConnectionManager`; the custom profile importer is not wired into that
 connection lifecycle.
 
+## Pinned Xray runtime input
+
+The CI workflow downloads the upstream `AndroidLibXrayLite` v26.11.9 AAR, whose
+source commit is the exact `AndroidLibXrayLite` gitlink revision used by the
+upstream v2rayNG checkout at the time this integration was pinned
+(`b5a377087e74eaa34e86718710b04c50f4b767f5`). The downloaded artifact is
+SHA-256 checked and CI verifies `libgojni.so` exists for arm64-v8a, armeabi-v7a,
+x86_64, and x86 before Gradle runs. The app already consumes local AAR files
+from `app/libs`, so this makes the native runtime available to the APK build.
+
+This is **packaging only**, not a connected VPN implementation: no Kotlin
+adapter currently creates a `CoreController`, prepares Xray JSON, supplies a
+TUN descriptor, or owns start/stop lifecycle.
+
 ## Xray runtime integration requirements
 
 The upstream v2rayNG project builds its native Xray runtime from the pinned
