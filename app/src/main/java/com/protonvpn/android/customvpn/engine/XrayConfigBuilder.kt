@@ -255,6 +255,8 @@ object XrayConfigBuilder {
     private fun decodeBase64IfPossible(value: String): String =
         runCatching {
             String(Base64.decode(padBase64(value), Base64.URL_SAFE or Base64.NO_WRAP), StandardCharsets.UTF_8)
+        }.recoverCatching {
+            String(Base64.decode(padBase64(value), Base64.DEFAULT), StandardCharsets.UTF_8)
         }.getOrDefault("")
 
     private fun padBase64(value: String): String =
