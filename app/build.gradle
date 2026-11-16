@@ -764,7 +764,10 @@ tasks.register("relocateXrayAar") {
                 java.util.zip.ZipEntry entry
                 while ((entry = jarInput.nextEntry) != null) {
                     byte[] bytes = jarInput.readAllBytes()
-                    jarZip.putNextEntry(new java.util.zip.ZipEntry(entry.name))
+                    String relocatedEntryName = entry.name.startsWith("go/") && entry.name.endsWith(".class")
+                        ? "xraygo/" + entry.name.substring(3)
+                        : entry.name
+                    jarZip.putNextEntry(new java.util.zip.ZipEntry(relocatedEntryName))
                     if (entry.name.endsWith(".class")) {
                         def reader = new org.objectweb.asm.ClassReader(bytes)
                         def writer = new org.objectweb.asm.ClassWriter(0)
