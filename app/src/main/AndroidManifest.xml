@@ -56,8 +56,14 @@
 
         <activity
             android:name=".customvpn.ui.CustomProfilesActivity"
-            android:exported="false"
-            android:theme="@style/ProtonTheme.Vpn.Mobile" />
+            android:exported="true"
+            android:theme="@style/ProtonTheme.Vpn.Mobile">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".redesign.app.ui.MainActivity"
