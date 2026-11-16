@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -51,13 +52,13 @@ class CustomXrayVpnService : VpnService() {
                     stopSelf(startId)
                     return START_NOT_STICKY
                 }
+                setRuntimeState(STATE_CONNECTING)
                 startForeground(NOTIFICATION_ID, buildNotification("در حال آماده‌سازی اتصال"))
                 startTunnel(profileId, startId)
                 return START_NOT_STICKY
             }
             ACTION_DISCONNECT -> {
-                stopTunnel()
-                stopSelf(startId)
+                stopTunnel(stopService = true, startId = startId)
                 return START_NOT_STICKY
             }
             else -> {
@@ -103,22 +104,30 @@ class CustomXrayVpnService : VpnService() {
                 tunInterface = descriptor
                 val config = XrayConfigBuilder.build(profile, DEFAULT_MTU)
                 xrayRuntime.start(config, descriptor.fd)
+                setRuntimeState(STATE_CONNECTED)
                 updateNotification("متصل: ${profile.name}")
             } catch (_: Exception) {
                 xrayRuntime.stop()
                 closeTun()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf(startId)
+                setRuntimeState(STATE_ERROR)
+                withContext(Dispatchers.Main) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf(startId)
+                }
             }
         }
     }
 
-    private fun stopTunnel() {
+    private fun stopTunnel(stopService: Boolean = false, startId: Int = 0) {
         startJob?.cancel()
         serviceScope.launch {
             xrayRuntime.stop()
             closeTun()
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            setRuntimeState(STATE_DISCONNECTED)
+            withContext(Dispatchers.Main) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (stopService) stopSelf(startId)
+            }
         }
     }
 
@@ -185,9 +194,20 @@ class CustomXrayVpnService : VpnService() {
         }
 
         fun stop(context: android.content.Context) {
-            context.startService(
+            ContextCompat.startForegroundService(context,
                 Intent(context, CustomXrayVpnService::class.java).setAction(ACTION_DISCONNECT)
             )
         }
+
+        private const val PREFS = "custom_xray_runtime"
+        private const val KEY_STATE = "state"
+        private const val STATE_CONNECTING = "connecting"
+        private const val STATE_CONNECTED = "connected"
+        private const val STATE_DISCONNECTED = "disconnected"
+        private const val STATE_ERROR = "error"
+    }
+
+    private fun setRuntimeState(state: String) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_STATE, state).apply()
     }
 }
