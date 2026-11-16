@@ -1,60 +1,48 @@
-# Build and validation status
+# Build and Xray integration status
 
-## Android CI
+## Implemented on `feature/xray-profile-import`
 
-The `.github/workflows/android-apk.yml` workflow runs the custom importer unit
-tests and assembles the existing Proton Android debug variant
-`ProductionVanillaOpenSourceDebug`. It exports `universal.apk` only when Gradle
-produces exactly one APK output. This prevents accidentally renaming one ABI split
-as a universal package.
+- Persistent custom profile model and store, plus import parsing for VLESS, VMess, Trojan, Shadowsocks, SOCKS/SOCKS5 and HTTP share links.
+- Plain-text and Base64 subscription import, duplicate detection, and refresh of saved subscription sources.
+- A pinned AndroidLibXrayLite v26.11.9 AAR download in CI, with SHA-256 verification and checks for arm64-v8a, armeabi-v7a, x86_64 and x86 native libraries.
+- `XrayCoreRuntime` initializes the gomobile library and wraps a single CoreController with synchronized start/stop operations.
+- `XrayConfigBuilder` creates initial Xray JSON for the supported protocols, including TCP, WebSocket, gRPC, HTTP/2, HTTPUpgrade, XHTTP, TLS and REALITY options where represented by the share link.
+- `CustomXrayVpnService` owns the Android TUN descriptor, creates IPv4 and IPv6 routes, starts/stops the Xray runtime, and posts a persistent disconnect notification.
+- A profile manager reachable from the Proton home screen. It supports manual paste, Android text sharing, QR decoding from an image, import, deletion, subscription refresh and connect/disconnect actions.
+- VPN consent is requested through the Android system permission flow.
+- A guard prevents starting the custom tunnel while another VPN is active, because Android supports only one active VPN per user profile and silently replacing Proton's tunnel would leave Proton's UI state inconsistent.
+- Unit tests cover initial VLESS/VMess config generation, Trojan TLS defaults, Shadowsocks outbound shape, and unsupported transport/REALITY validation.
 
-## Important scope boundary
+## Build workflow
 
-A successful build from this workflow validates the current Proton app and the
-profile import/storage foundation. It does **not** mean custom Xray profiles can
-connect. The current app still routes connection requests through Proton's
-`VpnConnectionManager`; the custom profile importer is not wired into that
-connection lifecycle.
+The workflow `.github/workflows/android-apk.yml` runs unit tests and assembles
+`ProductionVanillaOpenSourceDebug`. It copies the APK to `dist/universal.apk`
+only when Gradle produces exactly one APK. The workflow is PR-driven (plus
+manual dispatch) to avoid running the same full build twice for both a branch
+push and its pull-request event.
 
-## Pinned Xray runtime input
+A successful CI build confirms compilation and packaging only. It does not prove
+that a remote proxy can be reached or that packets are flowing through the TUN.
 
-The CI workflow downloads the upstream `AndroidLibXrayLite` v26.11.9 AAR, whose
-source commit is the exact `AndroidLibXrayLite` gitlink revision used by the
-upstream v2rayNG checkout at the time this integration was pinned
-(`b5a377087e74eaa34e86718710b04c50f4b767f5`). The downloaded artifact is
-SHA-256 checked and CI verifies `libgojni.so` exists for arm64-v8a, armeabi-v7a,
-x86_64, and x86 before Gradle runs. The app already consumes local AAR files
-from `app/libs`, so this makes the native runtime available to the APK build.
+## Remaining validation and known limitations
 
-The app now has an injectable `XrayCoreRuntime` adapter that initializes the
-pinned gomobile library, creates one `CoreController`, and exposes synchronized
-start/stop operations. Its start method accepts a complete Xray JSON document
-and an already-owned TUN file descriptor. It deliberately does not create a TUN
-or start an Android service by itself.
+- The latest CI run must complete successfully before an APK artifact can be claimed.
+- No emulator or physical-device connection test has been completed yet. The
+  VPN consent flow, IPv4/IPv6 routing, DNS behavior, Android revocation, app
+  backgrounding and real VLESS/VMess/Trojan/SS endpoints still need device tests.
+- The custom service is not integrated into Proton's existing
+  `VpnConnectionManager`. The profile manager deliberately asks users to
+  disconnect an existing VPN first; unified Proton/Xray connection-state
+  management and seamless hand-off remain future work.
+- QR import currently decodes a QR code from a selected image; it does not run a
+  live camera scanner.
+- The config builder implements a useful subset, not full v2rayNG parity.
+  Advanced routing, custom DNS rules, per-app split tunneling, plugins,
+  transport-specific edge cases and every legacy URI variant are not yet covered.
+- Live ping/latency and traffic statistics are not wired into the UI.
+- Automatic service recovery after process death and subscription scheduling
+  are not implemented.
 
-This is still **not a connected VPN implementation**: imported share links are
-not yet converted into complete Xray JSON, no custom-profile Android VPN service
-owns and supplies the TUN descriptor, and the existing Proton connection UI
-does not yet select or invoke this runtime. CI compilation is required to verify
-the Kotlin adapter against the pinned AAR.
-
-## Xray runtime integration requirements
-
-The upstream v2rayNG project builds its native Xray runtime from the pinned
-`AndroidLibXrayLite` source and packages the generated AAR plus native
-dependencies. The native source revision must match the upstream gitlink, and
-every declared ABI must be verified. Do not add a guessed Maven coordinate or
-copy an arbitrary prebuilt AAR.
-
-The remaining integration must provide:
-- a pinned and reproducible Xray AAR build (including gomobile and native ABI checks);
-- a single, app-owned Android VPN service lifecycle (no competing Proton and Xray
-  tunnels);
-- a tested converter from every supported imported share link to complete Xray JSON;\n- a custom-profile Android VPN service that owns the TUN descriptor and delegates to `XrayCoreRuntime`;
-- foreground notification, permission flow, stop/restart, and process-death recovery;
-- UI navigation for link, clipboard, QR, and subscription import and profile selection;
-- subscription refresh with HTTPS-only transport, bounded body size and timeouts;
-- device/emulator tests for each protocol and leak/DNS behavior.
-
-A build artifact is not a runtime test. Device-level tunnel verification remains
-required before describing the app as a working VPN client.
+Do not describe this branch as a fully verified VPN client until the CI APK is
+built and a real device successfully connects through each required protocol
+with DNS and leak checks.
