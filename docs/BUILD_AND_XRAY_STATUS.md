@@ -26,9 +26,17 @@ SHA-256 checked and CI verifies `libgojni.so` exists for arm64-v8a, armeabi-v7a,
 x86_64, and x86 before Gradle runs. The app already consumes local AAR files
 from `app/libs`, so this makes the native runtime available to the APK build.
 
-This is **packaging only**, not a connected VPN implementation: no Kotlin
-adapter currently creates a `CoreController`, prepares Xray JSON, supplies a
-TUN descriptor, or owns start/stop lifecycle.
+The app now has an injectable `XrayCoreRuntime` adapter that initializes the
+pinned gomobile library, creates one `CoreController`, and exposes synchronized
+start/stop operations. Its start method accepts a complete Xray JSON document
+and an already-owned TUN file descriptor. It deliberately does not create a TUN
+or start an Android service by itself.
+
+This is still **not a connected VPN implementation**: imported share links are
+not yet converted into complete Xray JSON, no custom-profile Android VPN service
+owns and supplies the TUN descriptor, and the existing Proton connection UI
+does not yet select or invoke this runtime. CI compilation is required to verify
+the Kotlin adapter against the pinned AAR.
 
 ## Xray runtime integration requirements
 
@@ -42,7 +50,7 @@ The remaining integration must provide:
 - a pinned and reproducible Xray AAR build (including gomobile and native ABI checks);
 - a single, app-owned Android VPN service lifecycle (no competing Proton and Xray
   tunnels);
-- a tested adapter from imported share links to the exact Xray runtime API;
+- a tested converter from every supported imported share link to complete Xray JSON;\n- a custom-profile Android VPN service that owns the TUN descriptor and delegates to `XrayCoreRuntime`;
 - foreground notification, permission flow, stop/restart, and process-death recovery;
 - UI navigation for link, clipboard, QR, and subscription import and profile selection;
 - subscription refresh with HTTPS-only transport, bounded body size and timeouts;
