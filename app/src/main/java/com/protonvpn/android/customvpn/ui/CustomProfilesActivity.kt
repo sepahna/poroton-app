@@ -12,6 +12,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Bundle
+import android.net.Uri
+import android.graphics.BitmapFactory
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +50,10 @@ import com.protonvpn.android.customvpn.engine.CustomXrayVpnService
 import com.protonvpn.android.customvpn.importer.ProxyProfileImporter
 import com.protonvpn.android.customvpn.model.CustomVpnProfile
 import com.protonvpn.android.customvpn.storage.CustomVpnProfileStore
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.HybridBinarizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,6 +99,7 @@ class CustomProfilesActivity : ComponentActivity() {
                         profileStore.getAll()
                     },
                     pasteClipboard = ::readClipboard,
+                    decodeQrImage = ::decodeQrImage,
                     onClose = ::finish,
                 )
             }
@@ -190,6 +198,19 @@ class CustomProfilesActivity : ComponentActivity() {
         return true
     }
 
+    private suspend fun decodeQrImage(uri: Uri): String = withContext(Dispatchers.IO) {
+        val bitmap = contentResolver.openInputStream(uri).use { stream ->
+            requireNotNull(stream) { "تصویر QR قابل خواندن نیست" }
+            BitmapFactory.decodeStream(stream)
+        } ?: error("فایل تصویر نامعتبر است")
+        val width = bitmap.width
+        val height = bitmap.height
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        val source = RGBLuminanceSource(width, height, pixels)
+        MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(source))).text
+    }
+
     private fun readClipboard(): String {
         val manager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         return manager.primaryClip?.takeIf { it.itemCount > 0 }
@@ -211,8 +232,24 @@ private fun CustomProfilesScreen(
     disconnect: () -> Unit,
     delete: (String) -> List<CustomVpnProfile>,
     pasteClipboard: () -> String,
+    decodeQrImage: suspend (Uri) -> String,
     onClose: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching { decodeQrImage(uri) }
+                    .onSuccess {
+                        input = it
+                        message = "متن QR خوانده شد؛ برای ذخیره، دکمه وارد کردن را بزنید."
+                    }
+                    .onFailure {
+                        message = it.message ?: "خواندن QR ناموفق بود."
+                    }
+            }
+        }
+    }
     var input by remember { mutableStateOf(initialText) }
     var profiles by remember { mutableStateOf(loadProfiles()) }
     var busy by remember { mutableStateOf(false) }
@@ -251,6 +288,7 @@ private fun CustomProfilesScreen(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { input = pasteClipboard() }) { Text("چسباندن") }
+                    OutlinedButton(onClick = { qrPicker.launch("image/*") }) { Text("QR تصویر") }
                     Button(
                         enabled = input.isNotBlank() && !busy,
                         onClick = {
