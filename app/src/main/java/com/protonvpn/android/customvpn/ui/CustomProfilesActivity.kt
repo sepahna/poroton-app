@@ -83,6 +83,7 @@ class CustomProfilesActivity : ComponentActivity() {
                     initialText = sharedText,
                     loadProfiles = profileStore::getAll,
                     importProfiles = ::importProfiles,
+                    refreshSubscriptions = ::refreshSubscriptions,
                     connect = ::connectProfile,
                     disconnect = { CustomXrayVpnService.stop(this) },
                     delete = { id ->
@@ -118,6 +119,23 @@ class CustomProfilesActivity : ComponentActivity() {
             }
             result.onSuccess { profileStore.addAll(it) }
             onResult(result.map { profileStore.getAll() })
+        }
+    }
+
+    private fun refreshSubscriptions(onResult: (Result<List<CustomVpnProfile>>) -> Unit) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val sources = profileStore.getAll().mapNotNull { it.source }.distinct()
+                    check(sources.isNotEmpty()) { "سابسکریپشن ذخیره‌شده‌ای برای به‌روزرسانی وجود ندارد" }
+                    sources.forEach { source ->
+                        val imported = ProxyProfileImporter.importText(fetchSubscription(source), source)
+                        profileStore.replaceSource(source, imported)
+                    }
+                    profileStore.getAll()
+                }
+            }
+            onResult(result)
         }
     }
 
@@ -177,6 +195,7 @@ private fun CustomProfilesScreen(
     initialText: String,
     loadProfiles: () -> List<CustomVpnProfile>,
     importProfiles: (String, (Result<List<CustomVpnProfile>>) -> Unit) -> Unit,
+    refreshSubscriptions: ((Result<List<CustomVpnProfile>>) -> Unit) -> Unit,
     connect: (String) -> Unit,
     disconnect: () -> Unit,
     delete: (String) -> List<CustomVpnProfile>,
@@ -248,7 +267,24 @@ private fun CustomProfilesScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("کانفیگ‌های ذخیره‌شده", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            TextButton(onClick = disconnect) { Text("قطع اتصال") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(
+                    enabled = !busy && profiles.any { it.source != null },
+                    onClick = {
+                        busy = true
+                        refreshSubscriptions { result ->
+                            busy = false
+                            result.onSuccess {
+                                profiles = it
+                                message = "سابسکریپشن‌ها به‌روزرسانی شدند."
+                            }.onFailure {
+                                message = it.message ?: "به‌روزرسانی ناموفق بود."
+                            }
+                        }
+                    },
+                ) { Text("به‌روزرسانی") }
+                TextButton(onClick = disconnect) { Text("قطع اتصال") }
+            }
         }
 
         if (profiles.isEmpty()) {
@@ -257,7 +293,10 @@ private fun CustomProfilesScreen(
             profiles.forEach { profile ->
                 ProfileCard(
                     profile = profile,
-                    onConnect = { connect(profile.id) },
+                    onConnect = {
+                        connect(profile.id)
+                        message = "درخواست اتصال ارسال شد؛ وضعیت را از اعلان VPN بررسی کنید."
+                    },
                     onDelete = { profiles = delete(profile.id) },
                 )
             }
