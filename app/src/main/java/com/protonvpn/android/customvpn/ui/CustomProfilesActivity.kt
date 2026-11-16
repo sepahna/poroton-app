@@ -9,6 +9,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -175,7 +176,7 @@ class CustomProfilesActivity : ComponentActivity() {
         val connectivityManager = getSystemService(ConnectivityManager::class.java)
         val activeVpn = connectivityManager.activeNetwork?.let { network ->
             connectivityManager.getNetworkCapabilities(network)
-                ?.hasTransport(ConnectivityManager.TRANSPORT_VPN) == true
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
         } == true
         if (activeVpn) return false
 
