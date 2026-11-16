@@ -70,7 +70,7 @@ object XrayConfigBuilder {
     }
 
     private fun buildVmess(profile: CustomVpnProfile): JSONObject {
-        val encoded = profile.rawUri.substringAfter("://")
+        val encoded = profile.rawUri.substringAfter("://").substringBefore('#')
         val decoded = String(Base64.decode(padBase64(encoded), Base64.DEFAULT), StandardCharsets.UTF_8)
         val vmess = JSONObject(decoded)
         val user = JSONObject()
