@@ -815,7 +815,7 @@ tasks.register("relocateXrayAar") {
                     classesJarFound = true
                 } else if (entry.name ==~ /jni\/(arm64-v8a|armeabi-v7a|x86_64|x86)\/libgojni\.so/) {
                     // Keep Proton's libgojni.so intact; give Xray a distinct filename and ELF SONAME.
-                    if (bytes.length < 4 || bytes[0] != 0x7f || bytes[1] != 0x45 || bytes[2] != 0x4c || bytes[3] != 0x46) {
+                    if (bytes.length < 4 || (bytes[0] & 0xff) != 0x7f || (bytes[1] & 0xff) != 0x45 || (bytes[2] & 0xff) != 0x4c || (bytes[3] & 0xff) != 0x46) {
                         throw new GradleException("Xray JNI payload is not a valid ELF file: ${entry.name}")
                     }
                     File nativeFile = new File(temporaryDir, "libxraygojni.so")
