@@ -95,6 +95,8 @@ object ProxyProfileImporter {
         val raw = uri.rawSchemeSpecificPart.substringBefore('?')
         val decoded = runCatching {
             String(Base64.decode(padBase64(raw), Base64.URL_SAFE or Base64.NO_WRAP), StandardCharsets.UTF_8)
+        }.recoverCatching {
+            String(Base64.decode(padBase64(raw), Base64.DEFAULT), StandardCharsets.UTF_8)
         }.getOrNull()
         val authority = decoded?.takeIf { it.contains('@') } ?: raw
         val endpoint = authority.substringAfterLast('@')
