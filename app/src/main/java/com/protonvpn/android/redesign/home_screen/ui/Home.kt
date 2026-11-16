@@ -318,7 +318,7 @@ fun HomeView(
     onOpenSmartDiscoveryConnectionPreferences: () -> Unit,
     onDismissSmartDiscoveryConnectionPreferencesDialog: () -> Unit,
     onLaunchUpgradeDialog: (upgradeSource: UpgradeSource, upgradeTrigger: UpgradeTrigger) -> Unit,
-    onOpenCustomProfiles: () -> Unit,
+    onOpenCustomProfiles: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
