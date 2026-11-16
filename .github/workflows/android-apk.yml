@@ -38,6 +38,11 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Install patchelf for isolated Xray JNI SONAME
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes patchelf
+
       - name: Fetch pinned Xray runtime AAR
         shell: bash
         run: |
