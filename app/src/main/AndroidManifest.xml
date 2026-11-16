@@ -55,6 +55,11 @@
         tools:replace="android:theme">
 
         <activity
+            android:name=".customvpn.ui.CustomProfilesActivity"
+            android:exported="false"
+            android:theme="@style/ProtonTheme.Vpn.Mobile" />
+
+        <activity
             android:name=".redesign.app.ui.MainActivity"
             android:theme="@style/ProtonTheme.Splash.Vpn.DarkPreferred"
             android:exported="false"
