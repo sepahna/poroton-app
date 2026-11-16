@@ -7,8 +7,11 @@ package com.protonvpn.android.customvpn.importer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.Base64
 
+@RunWith(RobolectricTestRunner::class)
 class ProxyProfileImporterTest {
     @Test
     fun parsesVlessShareLink() {
@@ -36,6 +39,16 @@ class ProxyProfileImporterTest {
         val payload = """{"add":"vmess.example","port":"8443","ps":"VMess NL"}"""
         val encoded = Base64.getEncoder().encodeToString(payload.toByteArray())
         val profile = ProxyProfileImporter.parseShareLink("VMESS://$encoded")
+        assertEquals("vmess", profile.protocol)
+        assertEquals("vmess.example", profile.server)
+    }
+
+
+    @Test
+    fun parsesVmessShareLinkWithOptionalFragment() {
+        val payload = """{"add":"vmess.example","port":"8443","id":"33333333-3333-4333-8333-333333333333","ps":"VMess NL"}"""
+        val encoded = Base64.getEncoder().encodeToString(payload.toByteArray())
+        val profile = ProxyProfileImporter.parseShareLink("vmess://$encoded#fragment")
         assertEquals("vmess", profile.protocol)
         assertEquals("vmess.example", profile.server)
     }
