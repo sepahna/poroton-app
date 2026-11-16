@@ -43,6 +43,12 @@ class CustomVpnProfileStore(context: Context) {
     }
 
     @Synchronized
+    fun replaceSource(source: String, profiles: List<CustomVpnProfile>) {
+        val retained = getAll().filterNot { it.source == source }
+        save(retained + profiles.map { it.copy(source = source) })
+    }
+
+    @Synchronized
     fun remove(id: String) {
         save(getAll().filterNot { it.id == id })
     }
