@@ -104,7 +104,7 @@ class CustomXrayVpnService : VpnService() {
                 val config = XrayConfigBuilder.build(profile, DEFAULT_MTU)
                 xrayRuntime.start(config, descriptor.fd)
                 updateNotification("متصل: ${profile.name}")
-            } catch (error: Exception) {
+            } catch (_: Exception) {
                 xrayRuntime.stop()
                 closeTun()
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -171,6 +171,9 @@ class CustomXrayVpnService : VpnService() {
         private const val DEFAULT_MTU = 1500
         private const val TUN_ADDRESS = "10.111.0.1"
         private const val DNS_SERVER = "1.1.1.1"
+
+        /** Returns the system VPN consent Intent, or null when permission is already granted. */
+        fun permissionIntent(context: android.content.Context): Intent? = VpnService.prepare(context)
 
         /** Call only after the Activity has completed VpnService.prepare() consent. */
         fun start(context: android.content.Context, profileId: String) {
