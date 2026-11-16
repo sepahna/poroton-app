@@ -44,6 +44,7 @@ object ProxyProfileImporter {
         val uri = URI(value)
         val scheme = uri.scheme?.lowercase() ?: error("پروتکل مشخص نیست")
         require(scheme in supportedSchemes) { "پروتکل پشتیبانی نمی‌شود: $scheme" }
+        if (scheme == "ss") return parseShadowsocks(value, source)
         val authority = uri.rawAuthority ?: error("آدرس سرور نامعتبر است")
         val endpoint = authority.substringAfterLast('@')
         val hostPort = endpoint.substringBefore('?').substringBefore('#')
@@ -89,10 +90,43 @@ object ProxyProfileImporter {
         )
     }
 
-    private fun decodeSubscription(text: String): String {
-        if (text.contains("://") && text.lineSequence().any { it.trim().startsWith("://") .not() && it.trim().contains("://") }) {
-            return text
+    private fun parseShadowsocks(link: String, source: String?): CustomVpnProfile {
+        val uri = URI(link)
+        val raw = uri.rawSchemeSpecificPart.substringBefore('?')
+        val decoded = runCatching {
+            String(Base64.decode(padBase64(raw), Base64.URL_SAFE or Base64.NO_WRAP), StandardCharsets.UTF_8)
+        }.getOrNull()
+        val authority = decoded?.takeIf { it.contains('@') } ?: raw
+        val endpoint = authority.substringAfterLast('@')
+        val hostPort = endpoint.substringBefore('#')
+        val host: String
+        val port: Int
+        if (hostPort.startsWith("[")) {
+            val end = hostPort.indexOf(']')
+            require(end > 0) { "IPv6 نامعتبر است" }
+            host = hostPort.substring(1, end)
+            port = hostPort.substring(end + 2).toInt()
+        } else {
+            host = hostPort.substringBeforeLast(':')
+            port = hostPort.substringAfterLast(':').toInt()
         }
+        require(host.isNotBlank() && port in 1..65535) { "آدرس یا پورت نامعتبر است" }
+        return CustomVpnProfile(
+            id = UUID.randomUUID().toString(),
+            name = uri.rawFragment?.let(::urlDecode)?.takeIf { it.isNotBlank() } ?: "Shadowsocks • $host",
+            protocol = "ss",
+            server = host,
+            port = port,
+            rawUri = link,
+            source = source,
+        )
+    }
+
+    private fun decodeSubscription(text: String): String {
+        if (text.lineSequence().any { line ->
+                val candidate = line.trim()
+                candidate.contains("://") && candidate.substringBefore("://").lowercase() in supportedSchemes
+            }) return text
         val compact = text.filterNot { it.isWhitespace() }
         val decoded = runCatching {
             String(Base64.decode(padBase64(compact), Base64.DEFAULT), StandardCharsets.UTF_8)
