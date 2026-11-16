@@ -200,7 +200,7 @@ object XrayConfigBuilder {
                 query["sni"]?.takeIf { it.isNotBlank() }?.let { tls.put("serverName", it) }
                 query["fp"]?.takeIf { it.isNotBlank() }?.let { tls.put("fingerprint", it) }
                 query["alpn"]?.takeIf { it.isNotBlank() }?.let { value ->
-                    tls.put("alpn", JSONArray().apply { value.split(',').forEach { add(it.trim()) } })
+                    tls.put("alpn", JSONArray().apply { value.split(',').forEach { put(it.trim()) } })
                 }
                 stream.put("tlsSettings", tls)
             }
