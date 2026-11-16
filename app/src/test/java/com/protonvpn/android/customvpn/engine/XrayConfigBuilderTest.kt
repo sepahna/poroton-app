@@ -11,8 +11,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.nio.charset.StandardCharsets
 
+@RunWith(RobolectricTestRunner::class)
 class XrayConfigBuilderTest {
 
     @Test
