@@ -5,7 +5,7 @@
 package com.protonvpn.android.customvpn.engine
 
 import android.content.Context
-import go.Seq
+import xraygo.Seq
 import dagger.hilt.android.qualifiers.ApplicationContext
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
