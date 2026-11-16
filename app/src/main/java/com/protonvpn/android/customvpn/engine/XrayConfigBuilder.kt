@@ -102,7 +102,10 @@ object XrayConfigBuilder {
         val settings = JSONObject().put("servers", JSONArray().put(
             JSONObject().put("address", profile.server).put("port", profile.port).put("password", password)
         ))
-        return outbound("trojan", settings, streamSettings(query(uri.rawQuery)))
+        val transport = query(uri.rawQuery).toMutableMap()
+        // Trojan is TLS by definition; many share links omit an explicit security parameter.
+        transport.putIfAbsent("security", "tls")
+        return outbound("trojan", settings, streamSettings(transport))
     }
 
     private fun buildShadowsocks(profile: CustomVpnProfile): JSONObject {
@@ -146,7 +149,7 @@ object XrayConfigBuilder {
 
     private fun streamSettings(query: Map<String, String>): JSONObject {
         val network = (query["type"] ?: "tcp").lowercase()
-        require(network in setOf("tcp", "ws", "grpc", "httpupgrade", "xhttp")) {
+        require(network in setOf("tcp", "ws", "grpc", "http", "h2", "httpupgrade", "xhttp")) {
             "Unsupported transport: $network"
         }
         val security = (query["security"] ?: "none").lowercase()
@@ -154,6 +157,14 @@ object XrayConfigBuilder {
         val stream = JSONObject().put("network", network).put("security", security)
 
         when (network) {
+            "h2", "http" -> {
+                stream.put("network", "http")
+                stream.put("httpSettings", JSONObject()
+                    .put("path", query["path"] ?: "/")
+                    .put("host", JSONArray().apply {
+                        query["host"]?.split(',')?.forEach { put(it.trim()) }
+                    }))
+            }
             "ws" -> {
                 val headers = JSONObject()
                 query["host"]?.takeIf { it.isNotBlank() }?.let { headers.put("Host", it) }
