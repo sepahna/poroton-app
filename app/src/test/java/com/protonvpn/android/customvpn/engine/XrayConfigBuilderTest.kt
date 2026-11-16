@@ -122,6 +122,19 @@ class XrayConfigBuilderTest {
         assertFalse(outbound.has("streamSettings"))
     }
 
+
+    @Test
+    fun shadowsocksLegacyWholeAuthorityBase64IsSupported() {
+        val credentials = "aes-256-gcm:secret@example.com:8388"
+        val encoded = Base64.encodeToString(credentials.toByteArray(StandardCharsets.UTF_8), Base64.NO_WRAP)
+        val profile = profile("ss", "ss://$encoded")
+        val outbound = JSONObject(XrayConfigBuilder.build(profile))
+            .getJSONArray("outbounds").getJSONObject(0)
+        val server = outbound.getJSONObject("settings").getJSONArray("servers").getJSONObject(0)
+        assertEquals("aes-256-gcm", server.getString("method"))
+        assertEquals("secret", server.getString("password"))
+    }
+
     private fun profile(protocol: String, rawUri: String) = CustomVpnProfile(
         id = "test",
         name = "test profile",
